@@ -2,7 +2,9 @@
 
 RFC 43, titled ['Integrate BigInts (and BigRats) Support Tightly With The Basic Scalars'](https://raku.org/archive/rfc/43.html) was submitted by Jarkko Hietaniemi  on 5 August 2000. It remains at version 1 and was never frozen during the official RFC review process.
 
-Despite this somewhat "unoffical" seeming status, the rational (or `Rat`) numeric type sits at the very core of the [Raku](https://raku.org) programming language today.
+Despite this somewhat "unoffical" seeming status, the rational (or `Rat`) numeric type, _by default,_ powers all of the fractional mathematics in the [Raku](https://raku.org) programming language today.
+
+You might say that this RFC was "adopted, and then some."
 
 ## A legacy of imprecision
 
@@ -32,11 +34,11 @@ It is probably safe to say that when Jarkko submitted his RFC for native support
 
 Quoting the thrust of Jarkko's proposal, with emphasis added:
 
-> Currently Perl 'transparently' starts using double floating point numbers when the numeric values grow too large for the native integer types (int, long, quad) can no more hold quantities that large. Because double floats are at their heart a lie, they cannot truly represent large numbers accurately. Therefore _sometimes when the application would prefer to stay accurate,_ the use of 'bigints' (and for division, 'bigrats') would be preferable.
+> Currently Perl 'transparently' starts using double floating point numbers when the numeric values grow too large for the native integer types (int, long, quad) can no more hold quantities that large. Because double floats are at their heart a lie, they cannot truly represent large numbers accurately. Therefore **_sometimes when the application would prefer to stay accurate,_** the use of 'bigints' (and for division, 'bigrats') would be preferable.
 
 Larry, it seems, decided to focus on a different phrase in the stated problem: _"because double floats are at their heart a lie"._ In a radical break from the dominant performance-first paradigm, it was decided that the core representation of fractional values would default to the most precise available -- regardless of the performance implications.
 
-Perl has always had a focus on "losing as little information as possible" when it came to your data. Scalars dynamically change shape and type based on what you put into them at any given time in order to ensure that they can hold that new value.
+Perl has always had a focus on "losing as little information as possible" when it comes to your data. Scalars dynamically change shape and type based on what you put into them at any given time in order to ensure that they can hold that new value.
 
 Perl has lso always had a focus on DWIM -- Do What I Mean. Combining DWIM with the "lose approximately nothing" principle in the case of division of numbers, Perl 6 would thus default to understanding your meaning to be a desire to have a precise fractional representation of this math that you just asked the computer to compute.
 
@@ -136,16 +138,18 @@ In summary, the nice equations about maximumum loss per equation are far from th
 It nevertheless remains a controversial decision that has a significant impact on baseline Raku performance. Roger Hui's warning about rational math "leaking out" into the business application is well-served by the timing results I get for the current implementations in `Matrix::Math`:
 
 ```
-(timings for 8x8 to get a bit more time spent)
-'Num' Hilbert inverse calculation: 0.1352471s
-'Num' dot product: 0.1432994s
-'Rat' Hilbert inverse calculation: 0.02654915s
-'Rat' dot product: 0.04200818s
+raku rationale-matrix.p6 --timings-only 8
+Created 'Num' Hilbert of 8x8: 0.03109376s
+Created 'Rat' Hilbert of 8x8: 0.0045802s
+Starting 'Num' Hilbert test at 2020-08-10T08:38:20.147506+02:00
+'Num' Hilbert inverse calculation: 4.6506456s
+'Num' dot product: 4.6612038s
+Starting 'Rat' Hilbert test at 2020-08-10T08:38:24.808709+02:00
+'Rat' Hilbert inverse calculation: 5.0791889s
+'Rat' dot product: 5.0791889s
 ```
 
-Considering it is essentially impossible for the floating point version to be faster than the rational one, we are seeing both the effects of Roger's warning and the quality of Raku's internal optimizer -- somewhere along the line the intended floating point math hits a rational code path, slowing it down but also leaving enough behind for the optimizer to make the next set of encounters with the same rationals much faster.
-
-It is possible to verify this by running each benchmark in its own thread -- without the benefit of the optimizations, the rational version runs at exactly the same speed as the floating one.
+Considering it is quite unlikely for the floating point version to be so close to the speed of the rational one, this simple benchmark appears to prove the case for Roger's warning about rational math "leaking out" into the larger system and causing significant performance degradation.[^5]
 
 So even though we ourselves took the extra step to try and get floating point (im-)precision and thus speeds, we were thwarted in our attempts. I believe this is a valid concern for the plenty of use cases that benefit from floating point math without causing any harm.
 
@@ -157,26 +161,58 @@ In the current preliminary conceptual phase, the idea would be to provide means 
 
 If that is below a given threshold, the same configurability could be used to remove `Rat` from the hierarchy entirely, thus ensuring floating point performance.
 
+## Balancing concerns
+
+The concerns of unintentional and/or unrecoverable performance degradation remain extremely valid and up until beginning the research on this I was un-concerned about rational performance.
+
+This lack of concern relied on a huge caveat -- that floating point performance is available and guarantee-able to anyone who wants to ensure it's use throughout their system.
+
+Unfortunately this is not the case in current Rakudo.
+
+I am still likely to move forward with a requirement of provable precision as a personal requirement when judging a _system_ for whether it meets my  expectations for "21st century."
+
+However, I now disavow my previous feelings that rational math as a default fractional representation is the best -- or, to put it more playfully, most _rational_ -- route for a given language implementation to take.[^6]
+
 ## Conclusion
 
 The intention of defaulting to rational representation was not intended to force users to the performance floor of rationals and it is a natural extension of Perlish philosophy to strive towards being even better at giving the user exactly -- without surprises -- what they want.
 
 Rather, Raku chooses a precision-first philosophy because it fits into the overall philosophy of keeping the truest representation of a user's demands as possible regardless of current computation cost -- without locking them into the expectations of the language implementor either.
 
-To the extent that Raku does not yet get this quite perfect, there remains a certain quality of rebellion and original thinking on the topic that puts Raku closest in line to providing powerful yet seamless mechanisms for choosing the best fractional representation for any given system.
+To the extent that Raku does not yet get this quite perfect, there remains a certain quality of rebellion and original thinking on this topic specifically and throught the language that puts Raku quite close to providing powerful yet seamless mechanisms for choosing the best fractional representation for any given system.
+
+
 
 [^1]: I say this because it implies that these are hardly the only two occasions where people have chosen an imprecise representation, have seen that imprecision manifest at significant scale, and have chosen to continue with the imprecise representation for mostly dubious reasons.
 [^2]: To date I'm not aware of any other programming languages designed and implemented in the 21st century that take this same "precision-first" approach. It apparently remains a controversial/unpopular choice in language design.
 [^3]: 
-	This is called from inside some glue that sepearates the timings and type cheacking from the underlying details.
+  This is called from inside some glue that sepearates the timings and type cheacking from the underlying details.
 
-	```
-	sub inner-hilbert(Int $n, FractionalRepresentation $type, $show-timings) {
-    	my $start = DateTime.now;
-    	my $hilbert = Math::Matrix.new: generate-hilbert($n,$type);
-		say "Created '$type' Hilbert of {$n}x{$n}: {DateTime.now - $start}s"
-        	if $show-timings;
-    	$hilbert
-	}
-	```
+  ```
+  sub inner-hilbert(Int $n, FractionalRepresentation $type, $show-timings) {
+      my $start = DateTime.now;
+      my $hilbert = Math::Matrix.new: generate-hilbert($n,$type);
+    say "Created '$type' Hilbert of {$n}x{$n}: {DateTime.now - $start}s"
+          if $show-timings;
+      $hilbert
+  }
+  ```
 [^4]: I patched a local version of `Math::Matrix` to print it's rationals always as fractions, so your output will look different for the rational Hilbert (ie the same as fractional Hilbert) if you end up running the code in this [gist](https://gist.github.com/ab5tract/3e25e4a2ce63a349b7eb4601a85b6993#file-rationale-matrique-raku).
+
+[^5]: 
+  If the timings of those calculations depress you, it is worth pointing out that Raku developer lichtkind has developed a version of the library that produces timings like these instead.
+
+  ```
+  raku rationale-matrix.p6 --timings-only 8
+  Created 'Num' Hilbert of 8x8: 0s
+  Created 'Rat' Hilbert of 8x8: 0.006514s
+  Starting 'Num' Hilbert test at 2020-08-10T11:06:34.567898+02:00
+  'Num' Hilbert inverse calculation: 0.2784531s
+  'Num' dot product: 0.2784531s
+  Starting 'Rat' Hilbert test at 2020-08-10T11:06:34.846350+02:00
+  'Rat' Hilbert inverse calculation: 0.06900818s
+  'Rat' dot product: 0.0846446s
+  ```
+  It is likely that this work will be incorporated in the default release at some point. Both systems work much better but here the asymmetry of `Num` to `Rat` performance is looking even more suspicious than the near-parity of the slower, released version. I will do a deeper dive into profiling both versions of the module in a post on my personal blog at some point soon.
+
+[^6]: I want to extend a deep and heartfelt thanks to Roger Hui, dzaima, ngn, Marshall, and the whole [APL Orchard](https://chat.stackexchange.com/rooms/52405/the-apl-orchard) for helping me to arrive at a much deeper understanding of the varieties of class and proportion that are countervailing forces for any hard-line stance relating to rational arithmetic. My positions were worded poorly and argued brusquely and not a match faithful match for your patience. I hope it is some consolation, at least, that I no longer agree with them.
